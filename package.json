@@ -1,0 +1,20 @@
+{
+  "name": "job-hunter",
+  "version": "1.0.0",
+  "description": "OpenClaw job hunter agent for LinkedIn and Seek",
+  "homepage": "https://github.com/ankiii16/job-hunter#readme",
+  "bugs": {
+    "url": "https://github.com/ankiii16/job-hunter/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ankiii16/job-hunter.git"
+  },
+  "license": "ISC",
+  "author": "akshay-lalwani",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
