@@ -14,14 +14,26 @@
   "author": "akshay-lalwani",
   "type": "commonjs",
   "main": "index.js",
-    "dependencies": {
-    "puppeteer": "^23.0.0",
+  "dependencies": {
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
-    "dotenv": "^16.3.0"
+    "dotenv": "^16.3.0",
+    "nodemailer": "^8.0.4",
+    "puppeteer": "^23.0.0"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node src/test.cjs"
+    "start": "node src/test.cjs",
+    "run:default": "JOB_PROFILE=default node src/test.cjs",
+    "run:akshay": "JOB_PROFILE=akshay node src/test.cjs",
+    "run:shikha": "JOB_PROFILE=shikha node src/test.cjs",
+    "test:telegram": "node src/connectivity/test-telegram.cjs",
+    "test:telegram:default": "JOB_PROFILE=default node src/connectivity/test-telegram.cjs",
+    "test:telegram:akshay": "JOB_PROFILE=akshay node src/connectivity/test-telegram.cjs",
+    "test:telegram:shikha": "JOB_PROFILE=shikha node src/connectivity/test-telegram.cjs",
+    "test:email": "node src/connectivity/test-email.cjs",
+    "test:email:default": "JOB_PROFILE=default node src/connectivity/test-email.cjs",
+    "test:email:akshay": "JOB_PROFILE=akshay node src/connectivity/test-email.cjs",
+    "test:email:shikha": "JOB_PROFILE=shikha node src/connectivity/test-email.cjs"
   }
 }

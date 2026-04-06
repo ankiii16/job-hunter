@@ -21,6 +21,35 @@ class JobHunter {
     this.ensureDirectories();
   }
 
+  deepMerge(base = {}, override = {}) {
+    if (Array.isArray(base) || Array.isArray(override)) {
+      return Array.isArray(override) ? [...override] : [...(base || [])];
+    }
+
+    const result = { ...(base || {}) };
+    for (const [key, value] of Object.entries(override || {})) {
+      const baseValue = result[key];
+      if (
+        value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        baseValue &&
+        typeof baseValue === 'object' &&
+        !Array.isArray(baseValue)
+      ) {
+        result[key] = this.deepMerge(baseValue, value);
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+
+  loadJsonIfExists(filePath) {
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  }
+
   ensureDirectories() {
     [this.dataDir, this.resultsDir].forEach(dir => {
       if (!fs.existsSync(dir)) {
@@ -31,10 +60,24 @@ class JobHunter {
 
   loadConfig() {
     try {
-      // Load profile
-      const profilePath = path.join(this.configDir, 'profile.json');
-      this.profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
-      console.log('✓ Profile loaded');
+      const selectedProfile = process.env.JOB_PROFILE || 'default';
+      const commonPath = path.join(this.configDir, 'common.json');
+      const namedProfilePath = path.join(this.configDir, 'profiles', `${selectedProfile}.json`);
+      const legacyProfilePath = path.join(this.configDir, 'profile.json');
+
+      const commonConfig = this.loadJsonIfExists(commonPath) || {};
+      const namedProfileConfig = this.loadJsonIfExists(namedProfilePath);
+      const legacyProfileConfig = this.loadJsonIfExists(legacyProfilePath);
+
+      if (namedProfileConfig) {
+        this.profile = this.deepMerge(commonConfig, namedProfileConfig);
+        console.log(`✓ Profile loaded: ${selectedProfile}`);
+      } else if (legacyProfileConfig) {
+        this.profile = this.deepMerge(commonConfig, legacyProfileConfig);
+        console.log('✓ Profile loaded: default (legacy profile.json)');
+      } else {
+        throw new Error('No profile configuration found. Add config/profiles/<name>.json or config/profile.json');
+      }
 
       // Load credentials (from env or config file as fallback)
       this.creds = {
@@ -43,7 +86,21 @@ class JobHunter {
           password: process.env.LINKEDIN_PASSWORD
         },
         telegram: {
-          chatId: process.env.TELEGRAM_CHAT_ID
+          botToken: this.profile?.notifications?.telegram?.botToken || process.env.TELEGRAM_BOT_TOKEN,
+          chatId: this.profile?.notifications?.telegram?.chatId || process.env.TELEGRAM_CHAT_ID
+        },
+        email: {
+          from: this.profile?.notifications?.email?.from || process.env.EMAIL_FROM,
+          to: this.profile?.notifications?.email?.to || process.env.EMAIL_TO,
+          smtpHost: this.profile?.notifications?.email?.smtpHost || process.env.SMTP_HOST,
+          smtpPort: Number(this.profile?.notifications?.email?.smtpPort || process.env.SMTP_PORT || 587),
+          smtpSecure:
+            this.profile?.notifications?.email?.smtpSecure !== undefined
+              ? Boolean(this.profile?.notifications?.email?.smtpSecure)
+              : String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+          smtpUser: this.profile?.notifications?.email?.smtpUser || process.env.SMTP_USER,
+          smtpPass: this.profile?.notifications?.email?.smtpPass || process.env.SMTP_PASS,
+          subjectPrefix: this.profile?.notifications?.email?.subjectPrefix || process.env.EMAIL_SUBJECT_PREFIX || 'Job Hunter'
         }
       };
 
@@ -53,12 +110,28 @@ class JobHunter {
         console.warn('  Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD');
       }
 
-      if (!this.creds.telegram.chatId) {
-        console.warn('⚠ Telegram chat ID not set in environment variables');
-        console.warn('  Set TELEGRAM_CHAT_ID');
+      if (!this.creds.telegram.botToken || !this.creds.telegram.chatId) {
+        console.warn('⚠ Telegram not fully configured (bot token/chat ID)');
+        console.warn('  Set profile.notifications.telegram.{botToken,chatId} or TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID');
       }
 
-      this.notifier = new Notifier(this.creds.telegram.chatId);
+      const emailConfigured = Boolean(
+        this.creds.email.from &&
+        this.creds.email.to &&
+        this.creds.email.smtpHost &&
+        this.creds.email.smtpUser &&
+        this.creds.email.smtpPass
+      );
+      if (!emailConfigured) {
+        console.warn('⚠ Email not fully configured');
+        console.warn('  Set profile.notifications.email or EMAIL_FROM/EMAIL_TO/SMTP_HOST/SMTP_USER/SMTP_PASS');
+      }
+
+      this.notifier = new Notifier({
+        mode: this.profile?.notifications?.mode || 'telegram',
+        telegram: this.creds.telegram,
+        email: this.creds.email
+      });
       
       // Initialize LLM matcher if OpenRouter key is available
       this.llmMatcher = new LLMJobMatcher(process.env.OPENROUTER_API_KEY);
@@ -82,8 +155,15 @@ class JobHunter {
     const allJobs = [];
     const errors = [];
 
+    const linkedinConfig = this.profile?.search?.linkedin || {};
+    const linkedinEnabled = linkedinConfig.enabled !== false;
+    const linkedinDescriptionLimit = Number(linkedinConfig.maxDescriptions || 15);
+    const linkedinQuery = this.getLinkedInSearchQuery();
+    const linkedinLocation = this.getLinkedInSearchLocation();
+    const linkedinRemoteOnly = linkedinConfig.remoteOnly !== false;
+
     // LinkedIn scraping
-    if (this.creds.linkedin.email && this.creds.linkedin.password) {
+    if (linkedinEnabled && this.creds.linkedin.email && this.creds.linkedin.password) {
       try {
         const linkedin = new LinkedInScraper(
           this.creds.linkedin.email,
@@ -93,15 +173,15 @@ class JobHunter {
         await linkedin.login();
 
         const linkedinJobs = await linkedin.searchJobs(
-          this.getSearchQuery(),
-          this.getSearchLocation(),
-          true // remote
+          linkedinQuery,
+          linkedinLocation,
+          linkedinRemoteOnly
         );
 
         console.log(`Found ${linkedinJobs.length} LinkedIn jobs before fetching descriptions`);
 
         // Fetch descriptions for top LinkedIn jobs (to limit runtime)
-        const topLinkedinJobs = linkedinJobs.slice(0, 15);
+        const topLinkedinJobs = linkedinJobs.slice(0, linkedinDescriptionLimit);
         for (const job of topLinkedinJobs) {
           try {
             await linkedin.fetchJobDescription(job);
@@ -119,14 +199,20 @@ class JobHunter {
         errors.push({ source: 'LinkedIn', error: error.message });
       }
     } else {
-      console.log('⊘ Skipping LinkedIn (credentials not set)');
+      const reason = linkedinEnabled ? 'credentials not set' : 'disabled in profile config';
+      console.log(`⊘ Skipping LinkedIn (${reason})`);
     }
 
     // Seek scraping (no auth required)
-    try {
+    const seekConfig = this.profile?.search?.seek || {};
+    const seekEnabled = seekConfig.enabled !== false;
+
+    if (seekEnabled) {
+      try {
       const seek = new SeekScraper();
       await seek.init();
       const seekQueries = this.getSeekQueries();
+      const seekLocationSlugs = this.getSeekLocationSlugs();
       const seekJobs = [];
       const seenSeekLinks = new Set();
 
@@ -134,8 +220,13 @@ class JobHunter {
         console.log(`\nSEEK query: "${query}"`);
         const jobsForQuery = await seek.searchJobsInLocations(
           query,
-          seek.regionalVictoriaSeekLocationSlugs,
-          { includeRemote: true, maxPagesPerLocation: 1, concurrency: 4 }
+          seekLocationSlugs,
+          {
+            includeRemote: seekConfig.includeRemote !== false,
+            remoteLocation: seekConfig.remoteLocation || 'Australia',
+            maxPagesPerLocation: Number(seekConfig.maxPagesPerLocation || 1),
+            concurrency: Number(seekConfig.concurrency || 4)
+          }
         );
 
         for (const job of jobsForQuery) {
@@ -149,7 +240,7 @@ class JobHunter {
       console.log(`Found ${seekJobs.length} Seek jobs before fetching descriptions`);
 
       // Fetch descriptions for top Seek jobs
-      const topSeekJobs = seekJobs.slice(0, 15);
+      const topSeekJobs = seekJobs.slice(0, Number(seekConfig.maxDescriptions || 15));
       for (const job of topSeekJobs) {
         try {
           await seek.fetchJobDescription(job);
@@ -161,9 +252,12 @@ class JobHunter {
       allJobs.push(...seekJobs);
       console.log(`✓ Seek: ${seekJobs.length} jobs collected`);
       await seek.close();
-    } catch (error) {
-      console.error('✗ Seek scraping failed:', error.message);
-      errors.push({ source: 'Seek', error: error.message });
+      } catch (error) {
+        console.error('✗ Seek scraping failed:', error.message);
+        errors.push({ source: 'Seek', error: error.message });
+      }
+    } else {
+      console.log('⊘ Skipping Seek (disabled in profile config)');
     }
 
     if (allJobs.length === 0) {
@@ -198,22 +292,44 @@ class JobHunter {
     console.log('================================\n');
   }
 
-  getSearchQuery() {
-    // Build a search query from skills
-    const primarySkills = ['React', 'React Native', 'AI Engineering', 'Backend', 'Frontend', 'Spring Boot', 'AWS'];
-    return primarySkills.slice(0, 3).join(' OR ');
+  getLinkedInSearchQuery() {
+    const configured = this.profile?.search?.linkedin?.query;
+    if (configured && String(configured).trim()) {
+      return String(configured).trim();
+    }
+
+    const profileSkills = Array.isArray(this.profile?.skills) ? this.profile.skills : [];
+    const fallbackSkills = profileSkills
+      .map(skill => String(skill || '').trim())
+      .filter(Boolean)
+      .slice(0, 4);
+
+    if (fallbackSkills.length > 0) {
+      return fallbackSkills.join(' OR ');
+    }
+
+    return 'Software Engineer';
   }
 
-  getSearchLocation() {
-    return 'Australia';
+  getLinkedInSearchLocation() {
+    return this.profile?.search?.linkedin?.location || 'Australia';
   }
 
   getSeekQueries() {
-    // // SEEK works better with focused keyword queries than one large OR clause.
-    // const profileSkills = Array.isArray(this.profile?.skills) ? this.profile.skills : [];
-    // const primary = profileSkills.slice(0, 8).map(s => String(s || '').trim()).filter(Boolean);
-    // return ['AI Engineer', 'Backend Developer', 'Frontend Developer'];
-    return ["Full Stack Developer"];
+    const configured = this.profile?.search?.seek?.queries;
+    if (Array.isArray(configured) && configured.length > 0) {
+      return configured.map(q => String(q || '').trim()).filter(Boolean);
+    }
+
+    return ['Software Engineer'];
+  }
+
+  getSeekLocationSlugs() {
+    const configured = this.profile?.search?.seek?.locationSlugs;
+    if (Array.isArray(configured) && configured.length > 0) {
+      return configured.map(slug => String(slug || '').trim()).filter(Boolean);
+    }
+    return [];
   }
 
   saveResults(matchedJobs, errors, summary) {

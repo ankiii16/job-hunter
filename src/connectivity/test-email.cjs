@@ -1,4 +1,4 @@
-// Test Telegram notification without scraping
+// Test email notification without scraping
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 const fs = require('fs');
@@ -39,46 +39,24 @@ const sampleJobs = [
   {
     id: '1',
     source: 'LinkedIn',
-    title: 'Senior AI Engineer',
-    company: 'TechCorp',
+    title: 'Business Intelligence Analyst',
+    company: 'DataCorp',
     location: 'Remote',
     link: 'https://linkedin.com/jobs/1',
-    description: 'We are looking for an AI engineer with experience in RAG, Langchain, and ML',
+    description: 'Power BI, DAX, SQL and reporting analytics',
     matchScore: 8,
-    roleCategory: 'AI Engineer'
+    roleCategory: 'General'
   },
   {
     id: '2',
-    source: 'LinkedIn',
-    title: 'Frontend React Developer',
-    company: 'StartupXYZ',
+    source: 'Seek',
+    title: 'Data Analyst',
+    company: 'Insights Pty Ltd',
     location: 'Remote',
-    link: 'https://linkedin.com/jobs/2',
-    description: 'React developer needed with TypeScript experience',
-    matchScore: 6,
-    roleCategory: 'Frontend Engineer'
-  },
-  {
-    id: '3',
-    source: 'LinkedIn',
-    title: 'Mobile React Native Developer',
-    company: 'AppWorks',
-    location: 'Australia (Remote)',
-    link: 'https://linkedin.com/jobs/3',
-    description: 'React Native mobile developer for iOS and Android',
-    matchScore: 5,
-    roleCategory: 'Mobile Engineer'
-  },
-  {
-    id: '4',
-    source: 'LinkedIn',
-    title: 'Backend Engineer - Spring Boot',
-    company: 'Enterprise Inc',
-    location: 'Remote',
-    link: 'https://linkedin.com/jobs/4',
-    description: 'Backend engineer with Spring Boot and AWS experience',
+    link: 'https://seek.com.au/job/2',
+    description: 'Python, Pandas, Tableau, SQL',
     matchScore: 7,
-    roleCategory: 'Backend Engineer'
+    roleCategory: 'General'
   }
 ];
 
@@ -101,39 +79,47 @@ const summary = matcher.generateSummary(matchedJobs);
 console.log('Matched jobs:', matchedJobs.length);
 console.log('Summary:', summary);
 
-// Test Telegram notification
-async function testNotifier() {
-  const botToken = profile?.notifications?.telegram?.botToken || process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = profile?.notifications?.telegram?.chatId || process.env.TELEGRAM_CHAT_ID;
+async function testEmailNotifier() {
+  const email = {
+    from: profile?.notifications?.email?.from || process.env.EMAIL_FROM,
+    to: profile?.notifications?.email?.to || process.env.EMAIL_TO,
+    smtpHost: profile?.notifications?.email?.smtpHost || process.env.SMTP_HOST,
+    smtpPort: Number(profile?.notifications?.email?.smtpPort || process.env.SMTP_PORT || 587),
+    smtpSecure:
+      profile?.notifications?.email?.smtpSecure !== undefined
+        ? Boolean(profile?.notifications?.email?.smtpSecure)
+        : String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+    smtpUser: profile?.notifications?.email?.smtpUser || process.env.SMTP_USER,
+    smtpPass: profile?.notifications?.email?.smtpPass || process.env.SMTP_PASS,
+    subjectPrefix: profile?.notifications?.email?.subjectPrefix || process.env.EMAIL_SUBJECT_PREFIX || 'Job Hunter'
+  };
 
-  if (!botToken || !chatId) {
-    console.log('❌ Telegram not fully configured');
-    console.log('   Set profile.notifications.telegram.{botToken,chatId}');
-    console.log('   or TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID in .env');
+  const required = ['from', 'to', 'smtpHost', 'smtpUser', 'smtpPass'];
+  const missing = required.filter(key => !email[key]);
+
+  if (missing.length > 0) {
+    console.log('❌ Email not fully configured');
+    console.log(`   Missing: ${missing.join(', ')}`);
+    console.log('   Set profile.notifications.email.* for this profile or corresponding .env values');
     return;
   }
 
-  console.log(`✓ Telegram config found for profile: ${selectedProfile}`);
-
   const notifier = new Notifier({
-    mode: 'telegram',
-    telegram: {
-      botToken,
-      chatId
-    }
+    mode: 'email',
+    email
   });
-  
+
   try {
-    console.log('📤 Sending test notification...');
+    console.log(`📤 Sending test email for profile: ${selectedProfile}...`);
     const result = await notifier.sendNotification(matchedJobs, summary);
-    if (result?.method === 'telegram') {
-      console.log('✅ Telegram notification sent successfully!');
+    if (result?.method === 'email') {
+      console.log('✅ Email notification sent successfully!');
     } else {
-      console.log('⚠ Telegram delivery failed; fallback used:', result?.method || 'unknown');
+      console.log('⚠ Email delivery failed; fallback used:', result?.method || 'unknown');
     }
   } catch (error) {
-    console.error('❌ Telegram notification failed:', error.message);
+    console.error('❌ Email notification failed:', error.message);
   }
 }
 
-testNotifier();
+testEmailNotifier();

@@ -1,0 +1,22 @@
+{
+  "search": {
+    "linkedin": {
+      "enabled": true,
+      "location": "Australia",
+      "remoteOnly": true,
+      "maxDescriptions": 15
+    },
+    "seek": {
+      "enabled": true,
+      "includeRemote": false,
+      "remoteLocation": "Australia",
+      "maxPagesPerLocation": 1,
+      "concurrency": 4,
+      "maxDescriptions": 15,
+      "locationSlugs": [
+        "Ballarat-VIC-3350",
+        "Geelong-VIC-3220"
+      ]
+    }
+  }
+}

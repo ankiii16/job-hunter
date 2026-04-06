@@ -371,7 +371,7 @@ class SeekScraper {
   async searchJobsInLocations(
     query,
     locationSlugs = [],
-    { includeRemote = true, maxPagesPerLocation = 2, concurrency = 4 } = {}
+    { includeRemote = true, remoteLocation = 'Australia', maxPagesPerLocation = 2, concurrency = 4 } = {}
   ) {
     const urls = [];
     const expandedSlugs = this.expandLocationSlugs(locationSlugs);
@@ -384,7 +384,7 @@ class SeekScraper {
     }
 
     if (includeRemote) {
-      const remoteBase = this.buildSeekRemoteUrl(query, 'Australia');
+      const remoteBase = this.buildSeekRemoteUrl(query, remoteLocation);
       for (let pageNum = 1; pageNum <= maxPagesPerLocation; pageNum++) {
         urls.push(this.withPageParam(remoteBase, pageNum));
       }

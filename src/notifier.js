@@ -1,35 +1,84 @@
 const axios = require('axios');
+const nodemailer = require('nodemailer');
 
 class Notifier {
-  constructor(telegramChatId) {
-    this.telegramChatId = telegramChatId;
-    this.telegramToken = process.env.TELEGRAM_BOT_TOKEN;
+  constructor(config = {}) {
+    this.mode = config.mode || 'telegram';
+
+    this.telegramToken = config.telegram?.botToken;
+    this.telegramChatId = config.telegram?.chatId;
     this.telegramApi = this.telegramToken && this.telegramChatId
       ? `https://api.telegram.org/bot${this.telegramToken}/sendMessage`
       : null;
+
+    this.email = {
+      from: config.email?.from,
+      to: config.email?.to,
+      smtpHost: config.email?.smtpHost,
+      smtpPort: Number(config.email?.smtpPort || 587),
+      smtpSecure: Boolean(config.email?.smtpSecure),
+      smtpUser: config.email?.smtpUser,
+      smtpPass: config.email?.smtpPass,
+      subjectPrefix: config.email?.subjectPrefix || 'Job Hunter'
+    };
+
+    this.mailTransporter = this.canSendEmail()
+      ? nodemailer.createTransport({
+          host: this.email.smtpHost,
+          port: this.email.smtpPort,
+          secure: this.email.smtpSecure,
+          auth: {
+            user: this.email.smtpUser,
+            pass: this.email.smtpPass
+          }
+        })
+      : null;
+  }
+
+  canSendEmail() {
+    return Boolean(
+      this.email.from &&
+      this.email.to &&
+      this.email.smtpHost &&
+      this.email.smtpUser &&
+      this.email.smtpPass
+    );
+  }
+
+  getChannels() {
+    const mode = String(this.mode || 'telegram').toLowerCase();
+    if (mode === 'email') return ['email'];
+    if (mode === 'both') return ['telegram', 'email'];
+    return ['telegram'];
   }
 
   async sendNotification(matchedJobs, summary) {
-    const message = this.formatMessage(matchedJobs, summary);
+    const htmlMessage = this.formatMessage(matchedJobs, summary);
+    const textMessage = this.formatTextMessage(matchedJobs, summary);
+    const channels = this.getChannels();
 
-    // Try Telegram first if configured
-    if (this.telegramApi) {
+    for (const channel of channels) {
       try {
-        const result = await this.sendTelegram(message);
-        console.log('Telegram notification sent successfully');
-        return result;
+        if (channel === 'telegram') {
+          const result = await this.sendTelegram(htmlMessage);
+          console.log('Telegram notification sent successfully');
+          if (this.mode !== 'both') return result;
+        } else if (channel === 'email') {
+          const result = await this.sendEmail(htmlMessage, textMessage);
+          console.log('Email notification sent successfully');
+          if (this.mode !== 'both') return result;
+        }
       } catch (error) {
-        console.error('Failed to send Telegram notification:', error.message);
-        // Fall back to console output
+        console.error(`Failed to send ${channel} notification:`, error.message);
       }
     }
 
     // Always log to console as backup
     console.log('\n==== JOB HUNTER RESULTS ====');
-    console.log(message);
+    console.log(textMessage);
     console.log('============================\n');
 
-    return { method: 'console', message };
+    return { method: 'console', message: textMessage };
   }
 
   formatMessage(matchedJobs, summary) {
@@ -92,9 +141,34 @@ class Notifier {
     return message;
   }
 
+  formatTextMessage(matchedJobs, summary) {
+    const date = new Date().toLocaleDateString('en-AU', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    let message = `Job Hunter Report - ${date}\n\n`;
+    message += `Summary: ${summary.total} jobs found\n`;
+    message += `  - LinkedIn: ${summary.bySource['LinkedIn'] || 0}\n`;
+    message += `  - Seek: ${summary.bySource['Seek'] || 0}\n\n`;
+    message += `Top 10 Matches:\n\n`;
+
+    matchedJobs.slice(0, 10).forEach((job, index) => {
+      message += `${index + 1}. ${job.title} (Score: ${job.matchScore || 0})\n`;
+      message += `   Role: ${job.roleCategory || 'General'}\n`;
+      message += `   Company: ${job.company || 'Unknown Company'}\n`;
+      message += `   Location: ${job.location || 'Unknown Location'}\n`;
+      message += `   Link: ${job.link}\n\n`;
+    });
+
+    return message;
+  }
+
   async sendTelegram(message) {
     if (!this.telegramApi) {
-      throw new Error('Telegram not configured (missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID)');
+      throw new Error('Telegram not configured (missing bot token or chat ID)');
     }
 
     // Telegram has a 4096 character limit
@@ -133,6 +207,23 @@ class Notifier {
     }
 
     return { success: true, messages: results.length };
+  }
+
+  async sendEmail(htmlMessage, textMessage) {
+    if (!this.mailTransporter || !this.canSendEmail()) {
+      throw new Error('Email not configured (missing SMTP or sender/receiver details)');
+    }
+
+    const subject = `${this.email.subjectPrefix} - Job Report`;
+    const info = await this.mailTransporter.sendMail({
+      from: this.email.from,
+      to: this.email.to,
+      subject,
+      text: textMessage,
+      html: htmlMessage
+    });
+
+    return { success: true, method: 'email', messageId: info.messageId };
   }
 
   formatConsole(matchedJobs, summary) {
