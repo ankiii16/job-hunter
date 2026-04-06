@@ -1,0 +1,23 @@
+{
+  "skills": [
+    "React",
+    "React Native",
+    "AI Engineering",
+    "RAG",
+    "RAG builder",
+    "Backend",
+    "Frontend",
+    "Spring Boot",
+    "AWS",
+    "AWS Cloud",
+    "Langchain",
+    "Claude Code",
+    "OpenClaw"
+  ],
+  "locations": {
+    "include": ["Remote", "regional", "NSW regional", "VIC regional", "QLD regional", "WA regional", "SA regional", "TAS regional", "NT regional"],
+    "exclude": ["Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", "Gold Coast", "Newcastle", "Canberra"]
+  },
+  "maxResults": 100,
+  "minMatchScore": 1
+}
