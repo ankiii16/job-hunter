@@ -19,7 +19,8 @@
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.3.0",
     "nodemailer": "^8.0.4",
-    "puppeteer": "^23.0.0"
+    "puppeteer": "^23.0.0",
+    "resend": "^2.0.0"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

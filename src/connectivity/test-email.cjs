@@ -53,7 +53,7 @@ const sampleJobs = [
     title: 'Data Analyst',
     company: 'Insights Pty Ltd',
     location: 'Remote',
-    link: 'https://seek.com.au/job/2',
+    link: 'https://www.seek.com.au/job/91036895?type=standard&ref=search-standalone&origin=cardTitle#sol=58c58174bc704f8b2fea2642b0b0a7ebd36418ef',
     description: 'Python, Pandas, Tableau, SQL',
     matchScore: 7,
     roleCategory: 'General'
@@ -83,30 +83,27 @@ async function testEmailNotifier() {
   const email = {
     from: profile?.notifications?.email?.from || process.env.EMAIL_FROM,
     to: profile?.notifications?.email?.to || process.env.EMAIL_TO,
-    smtpHost: profile?.notifications?.email?.smtpHost || process.env.SMTP_HOST,
-    smtpPort: Number(profile?.notifications?.email?.smtpPort || process.env.SMTP_PORT || 587),
-    smtpSecure:
-      profile?.notifications?.email?.smtpSecure !== undefined
-        ? Boolean(profile?.notifications?.email?.smtpSecure)
-        : String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
-    smtpUser: profile?.notifications?.email?.smtpUser || process.env.SMTP_USER,
-    smtpPass: profile?.notifications?.email?.smtpPass || process.env.SMTP_PASS,
     subjectPrefix: profile?.notifications?.email?.subjectPrefix || process.env.EMAIL_SUBJECT_PREFIX || 'Job Hunter'
   };
 
-  const required = ['from', 'to', 'smtpHost', 'smtpUser', 'smtpPass'];
-  const missing = required.filter(key => !email[key]);
+  const resendApiKey = profile?.notifications?.email?.resendApiKey || process.env.RESEND_API_KEY;
+
+  const required = ['from', 'to', 'resendApiKey'];
+  const missing = required.filter(key => !(key === 'resendApiKey' ? resendApiKey : email[key]));
 
   if (missing.length > 0) {
     console.log('❌ Email not fully configured');
     console.log(`   Missing: ${missing.join(', ')}`);
-    console.log('   Set profile.notifications.email.* for this profile or corresponding .env values');
+    console.log('   Set profile.notifications.email.resendApiKey or RESEND_API_KEY in .env');
     return;
   }
 
   const notifier = new Notifier({
     mode: 'email',
-    email
+    email: {
+      ...email,
+      resendApiKey
+    }
   });
 
   try {

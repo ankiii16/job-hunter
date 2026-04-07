@@ -92,14 +92,7 @@ class JobHunter {
         email: {
           from: this.profile?.notifications?.email?.from || process.env.EMAIL_FROM,
           to: this.profile?.notifications?.email?.to || process.env.EMAIL_TO,
-          smtpHost: this.profile?.notifications?.email?.smtpHost || process.env.SMTP_HOST,
-          smtpPort: Number(this.profile?.notifications?.email?.smtpPort || process.env.SMTP_PORT || 587),
-          smtpSecure:
-            this.profile?.notifications?.email?.smtpSecure !== undefined
-              ? Boolean(this.profile?.notifications?.email?.smtpSecure)
-              : String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
-          smtpUser: this.profile?.notifications?.email?.smtpUser || process.env.SMTP_USER,
-          smtpPass: this.profile?.notifications?.email?.smtpPass || process.env.SMTP_PASS,
+          resendApiKey: this.profile?.notifications?.email?.resendApiKey || process.env.RESEND_API_KEY,
           subjectPrefix: this.profile?.notifications?.email?.subjectPrefix || process.env.EMAIL_SUBJECT_PREFIX || 'Job Hunter'
         }
       };
@@ -118,23 +111,21 @@ class JobHunter {
       const emailConfigured = Boolean(
         this.creds.email.from &&
         this.creds.email.to &&
-        this.creds.email.smtpHost &&
-        this.creds.email.smtpUser &&
-        this.creds.email.smtpPass
+        this.creds.email.resendApiKey
       );
       if (!emailConfigured) {
         console.warn('⚠ Email not fully configured');
-        console.warn('  Set profile.notifications.email or EMAIL_FROM/EMAIL_TO/SMTP_HOST/SMTP_USER/SMTP_PASS');
+        console.warn('  Set profile.notifications.email.resendApiKey or RESEND_API_KEY in .env');
       }
 
       this.notifier = new Notifier({
-        mode: this.profile?.notifications?.mode || 'telegram',
+        mode: this.profile?.notifications?.mode || 'email',
         telegram: this.creds.telegram,
         email: this.creds.email
       });
       
       // Initialize LLM matcher if OpenRouter key is available
-      this.llmMatcher = new LLMJobMatcher(process.env.OPENROUTER_API_KEY);
+      // this.llmMatcher = new LLMJobMatcher(process.env.OPENROUTER_API_KEY);
 
       return true;
     } catch (error) {
@@ -271,13 +262,13 @@ class JobHunter {
     const matcher = new JobMatcher(this.profile);
     let matchedJobs = matcher.matchJobs(allJobs);
     
-    // Enhance with LLM if available
-    if (this.llmMatcher && this.llmMatcher.enabled) {
-      console.log('Enhancing matches with LLM...');
-      matchedJobs = await this.llmMatcher.batchAnalyze(matchedJobs, this.profile, (current, total) => {
-        console.log(`  LLM progress: ${current}/${total}`);
-      });
-    }
+    // // Enhance with LLM if available
+    // if (this.llmMatcher && this.llmMatcher.enabled) {
+    //   console.log('Enhancing matches with LLM...');
+    //   matchedJobs = await this.llmMatcher.batchAnalyze(matchedJobs, this.profile, (current, total) => {
+    //     console.log(`  LLM progress: ${current}/${total}`);
+    //   });
+    // }
     
     const summary = matcher.generateSummary(matchedJobs);
 
